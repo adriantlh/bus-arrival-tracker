@@ -1,0 +1,26 @@
+{
+  "bus_stops": {
+    "84069": {
+      "name": "Default Stop",
+      "services": ["45", "46"],
+      "description": "Example bus stop"
+    },
+    "01011": {
+      "name": "Opp Blk 1",
+      "services": ["2", "12", "33"],
+      "description": "Opposite Block 1"
+    },
+    "01012": {
+      "name": "Marina Centre",
+      "services": ["10", "97", "106"],
+      "description": "Marina Centre Terminal"
+    },
+    "01111": {
+      "name": "City Hall",
+      "services": ["2", "12", "36", "51", "64", "851"],
+      "description": "City Hall Interchange"
+    }
+  },
+  "default_stop": "84069",
+  "lta_url": "https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival"
+}

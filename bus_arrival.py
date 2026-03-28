@@ -1,6 +1,8 @@
 from flask import Flask, jsonify, render_template, request
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
 from dotenv import load_dotenv
@@ -12,6 +14,7 @@ app = Flask(__name__)
 # --- Config ---
 API_KEY = os.getenv("LTA_API_KEY")
 LTA_URL = os.getenv("LTA_URL", "https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival")
+CACHE_DURATION = int(os.getenv("CACHE_DURATION", "60"))  # Cache for 60 seconds default
 
 with open("config.json", "r") as f:
     config = json.load(f)
@@ -20,6 +23,17 @@ headers = {
     "AccountKey": API_KEY,
     "accept": "application/json"
 }
+
+# Simple in-memory cache
+cache = {}
+
+# Rate limiting
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["60 per minute"],
+    storage_uri="memory://"
+)
 
 
 def format_arrival(estimated_arrival):
@@ -70,8 +84,16 @@ def parse_bus(bus_data):
     }
 
 
-def fetch_arrivals(bus_stop_code, bus_services):
-    """Fetch and parse bus arrival data from LTA."""
+def fetch_arrivals(bus_stop_code, bus_services, force_refresh=False):
+    """Fetch and parse bus arrival data from LTA with caching."""
+    cache_key = f"{bus_stop_code}_{'_'.join(bus_services)}"
+    
+    # Check cache
+    if not force_refresh and cache_key in cache:
+        cached_data, cached_time = cache[cache_key]
+        if datetime.now() - cached_time < timedelta(seconds=CACHE_DURATION):
+            return cached_data, None
+    
     try:
         response = requests.get(
             LTA_URL,
@@ -102,6 +124,9 @@ def fetch_arrivals(bus_stop_code, bus_services):
             if bus not in result:
                 result[bus] = None
 
+        # Cache the result
+        cache[cache_key] = (result, datetime.now())
+        
         return result, None
 
     except requests.exceptions.Timeout:
@@ -141,23 +166,57 @@ def index(bus_stop_code=None):
 
 
 @app.route("/api/bus-arrival", methods=["GET"])
+@limiter.limit("30 per minute")
 def bus_arrival_api():
     """JSON API endpoint for programmatic access."""
     bus_stop_code = request.args.get("stop", config["default_stop"])
+    force_refresh = request.args.get("refresh", "").lower() == "true"
     
     if bus_stop_code not in config["bus_stops"]:
         bus_stop_code = config["default_stop"]
     
     bus_services = config["bus_stops"][bus_stop_code]["services"]
     
-    arrivals, error = fetch_arrivals(bus_stop_code, bus_services)
+    arrivals, error = fetch_arrivals(bus_stop_code, bus_services, force_refresh)
     if error:
         return jsonify({"error": error}), 502
+    
+    # Check if data is from cache
+    cache_key = f"{bus_stop_code}_{'_'.join(bus_services)}"
+    is_cached = cache_key in cache and (datetime.now() - cache[cache_key][1]) < timedelta(seconds=CACHE_DURATION)
+    
     return jsonify({
         "bus_stop": bus_stop_code,
         "bus_stop_info": config["bus_stops"][bus_stop_code],
         "fetched_at": datetime.now().isoformat(),
-        "arrivals": arrivals
+        "arrivals": arrivals,
+        "cached": is_cached,
+        "cache_duration": CACHE_DURATION
+    })
+
+
+@app.route("/api/bus-arrival", methods=["POST"])
+@limiter.limit("10 per minute")
+def bus_arrival_refresh():
+    """Force refresh bus arrival data (POST endpoint)."""
+    bus_stop_code = request.json.get("stop", config["default_stop"]) if request.json else config["default_stop"]
+    
+    if bus_stop_code not in config["bus_stops"]:
+        bus_stop_code = config["default_stop"]
+    
+    bus_services = config["bus_stops"][bus_stop_code]["services"]
+    
+    arrivals, error = fetch_arrivals(bus_stop_code, bus_services, force_refresh=True)
+    if error:
+        return jsonify({"error": error}), 502
+    
+    return jsonify({
+        "bus_stop": bus_stop_code,
+        "bus_stop_info": config["bus_stops"][bus_stop_code],
+        "fetched_at": datetime.now().isoformat(),
+        "arrivals": arrivals,
+        "cached": False,
+        "refreshed": True
     })
 
 

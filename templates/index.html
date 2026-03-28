@@ -511,6 +511,26 @@
       font-size: 11px;
       color: var(--muted);
     }
+
+    /* ── Cache indicator ── */
+    .cache-pill {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-left: 8px;
+      background: rgba(255,179,0,0.1);
+      border: 1px solid rgba(255,179,0,0.3);
+      color: var(--amber);
+    }
+
+    .cache-pill.live {
+      background: rgba(0,230,118,0.1);
+      border: 1px solid rgba(0,230,118,0.3);
+      color: var(--green);
+    }
   </style>
 </head>
 <body>
@@ -541,14 +561,15 @@
         {% endfor %}
         <span class="fetched-at">
           <span class="pulse-dot"></span>{{ fetched_at }}
+          <span id="cache-indicator" class="cache-pill" style="display:none;">Cached</span>
         </span>
-        <a href="/" class="refresh-btn">
+        <button id="manual-refresh-btn" class="refresh-btn" onclick="manualRefresh()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="23 4 23 10 17 10"></polyline>
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
           </svg>
           Refresh
-        </a>
+        </button>
       </div>
     </header>
 
@@ -648,10 +669,10 @@
     <footer>
       <span class="footer-text">
         Data from LTA DataMall &nbsp;·&nbsp;
-        <span id="countdown">Next refresh in <span id="timer">2:00</span></span>
+        <span id="countdown">Next auto-refresh in <span id="timer">2:00</span></span>
       </span>
       <div style="display:flex; align-items:center; gap:12px;">
-        <button id="manual-refresh-btn" class="refresh-btn" onclick="manualRefresh()" title="Recalculate displayed times from last fetch">
+        <button id="update-times-btn" class="refresh-btn" onclick="updateTimesOnly()" title="Recalculate displayed times from last fetch">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"></path>
@@ -665,11 +686,148 @@
   </div>
 
   <script>
+    // ── Configuration ──
+    const AUTO_REFRESH_INTERVAL = 120; // seconds
+    const CACHE_DURATION = 60; // seconds - matches server
+    
     // ── Bus stop selection ──
     function changeBusStop() {
       const select = document.getElementById('stopSelect');
       const stopCode = select.value;
       window.location.href = '/' + stopCode;
+    }
+
+    // ── Page visibility handling ──
+    let isPageVisible = true;
+    let autoRefreshTimer = null;
+    let countdownTimer = null;
+    let timeUpdateTimer = null;
+    let totalSeconds = AUTO_REFRESH_INTERVAL;
+    let lastFetchTime = null;
+
+    document.addEventListener('visibilitychange', () => {
+      isPageVisible = !document.hidden;
+      if (isPageVisible) {
+        startAutoRefresh();
+        updateTimesOnly();
+      } else {
+        stopAutoRefresh();
+      }
+    });
+
+    // ── Fetch fresh data from API ──
+    async function fetchFreshData(forceRefresh = false) {
+      const currentStop = window.location.pathname.replace('/', '') || '{{ config["default_stop"] }}';
+      try {
+        const response = await fetch(`/api/bus-arrival?stop=${currentStop}&refresh=${forceRefresh}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error('API request failed');
+        }
+        
+        const data = await response.json();
+        lastFetchTime = new Date();
+        
+        // Update cache indicator
+        const cacheIndicator = document.getElementById('cache-indicator');
+        if (cacheIndicator) {
+          if (data.cached) {
+            cacheIndicator.textContent = 'Cached';
+            cacheIndicator.classList.remove('live');
+          } else {
+            cacheIndicator.textContent = 'Live';
+            cacheIndicator.classList.add('live');
+          }
+          cacheIndicator.style.display = 'inline-block';
+        }
+        
+        return data;
+      } catch (error) {
+        console.error('Fetch error:', error);
+        return null;
+      }
+    }
+
+    // ── Refresh page with new data ──
+    async function manualRefresh() {
+      const btn = document.getElementById('manual-refresh-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+      }
+      
+      await fetchFreshData(true);
+      window.location.reload();
+    }
+
+    // ── Update times only (recalculate from stored data) ──
+    function updateTimesOnly() {
+      arrivalEls.forEach(el => {
+        const iso = el.getAttribute('data-arrival');
+        const val = computeMinutes(iso);
+        const unitEl = el.nextElementSibling;
+
+        if (val === null) {
+          el.textContent = '—';
+          el.style.fontSize = '14px';
+          el.style.color = 'var(--muted)';
+          if (unitEl && unitEl.classList.contains('minutes-unit')) unitEl.style.display = 'none';
+        } else if (val === 'Arr') {
+          el.textContent = 'Arriving';
+          el.classList.add('arriving');
+          el.style.fontSize = '20px';
+          if (unitEl && unitEl.classList.contains('minutes-unit')) unitEl.style.display = 'none';
+        } else {
+          el.textContent = val;
+          el.classList.remove('arriving');
+          el.style.fontSize = '';
+          el.style.color = '';
+          if (unitEl && unitEl.classList.contains('minutes-unit')) unitEl.style.display = '';
+        }
+      });
+    }
+
+    // ── Start auto-refresh countdown ──
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      totalSeconds = AUTO_REFRESH_INTERVAL;
+      
+      countdownTimer = setInterval(() => {
+        if (!isPageVisible) return;
+        
+        totalSeconds--;
+        timerEl.textContent = formatTime(totalSeconds);
+        
+        if (totalSeconds <= 0) {
+          clearInterval(countdownTimer);
+          if (isPageVisible) {
+            window.location.reload();
+          }
+        }
+      }, 1000);
+    }
+
+    // ── Stop auto-refresh ──
+    function stopAutoRefresh() {
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+    }
+
+    // ── Time update interval (updates displayed times every second) ──
+    function startTimeUpdates() {
+      if (timeUpdateTimer) clearInterval(timeUpdateTimer);
+      timeUpdateTimer = setInterval(() => {
+        if (isPageVisible) {
+          updateTimesOnly();
+        }
+      }, 1000);
     }
 
     // ── Stored arrival data (ISO strings from the page load) ──
@@ -693,69 +851,36 @@
       }
     }
 
-    function updateDisplayedTimes() {
-      arrivalEls.forEach(el => {
-        const iso = el.getAttribute('data-arrival');
-        const val = computeMinutes(iso);
-        const unitEl = el.nextElementSibling; // the "min" span
-
-        if (val === null) {
-          el.textContent = '—';
-          el.style.fontSize = '14px';
-          el.style.color = 'var(--muted)';
-          if (unitEl && unitEl.classList.contains('minutes-unit')) unitEl.style.display = 'none';
-        } else if (val === 'Arr') {
-          el.textContent = 'Arriving';
-          el.classList.add('arriving');
-          el.style.fontSize = '20px';
-          if (unitEl && unitEl.classList.contains('minutes-unit')) unitEl.style.display = 'none';
-        } else {
-          el.textContent = val;
-          el.classList.remove('arriving');
-          el.style.fontSize = '';
-          el.style.color = '';
-          if (unitEl && unitEl.classList.contains('minutes-unit')) unitEl.style.display = '';
-        }
-      });
-    }
-
-    // Flash the button briefly to confirm the update
-    function manualRefresh() {
-      updateDisplayedTimes();
-      const btn = document.getElementById('manual-refresh-btn');
-      btn.style.borderColor = 'var(--green)';
-      btn.style.color = 'var(--green)';
-      setTimeout(() => {
-        btn.style.borderColor = '';
-        btn.style.color = '';
-      }, 600);
-    }
-
-    // ── 2-minute countdown — only the page reload hits the server ──
-    let totalSeconds = 120;
-    const timerEl = document.getElementById('timer');
-
     function formatTime(s) {
       const m = Math.floor(s / 60);
       const sec = s % 60;
       return `${m}:${sec.toString().padStart(2, '0')}`;
     }
 
-    const tick = setInterval(() => {
-      totalSeconds--;
-      timerEl.textContent = formatTime(totalSeconds);
-
-      // Update displayed times every second passively
-      updateDisplayedTimes();
-
-      if (totalSeconds <= 0) {
-        clearInterval(tick);
-        window.location.reload(); // full reload = fresh data from LTA
+    // Flash the button briefly to confirm the update
+    function showUpdateConfirmation() {
+      const btn = document.getElementById('update-times-btn');
+      if (btn) {
+        btn.style.borderColor = 'var(--green)';
+        btn.style.color = 'var(--green)';
+        setTimeout(() => {
+          btn.style.borderColor = '';
+          btn.style.color = '';
+        }, 600);
       }
-    }, 1000);
+    }
 
-    // Run once on load to set initial display
-    updateDisplayedTimes();
+    // ── Initialization ──
+    const timerEl = document.getElementById('timer');
+
+    // Run once on load
+    updateTimesOnly();
+    startAutoRefresh();
+    startTimeUpdates();
+    
+    // Check initial cache status
+    fetchFreshData(false);
+  </script>
   </script>
 </body>
 </html>

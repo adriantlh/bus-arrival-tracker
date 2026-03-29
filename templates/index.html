@@ -11,7 +11,8 @@
     /* ── Base reset & variables ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
+    /* ── Dark theme (default) ── */
+    :root, [data-theme="dark"] {
       --bg:        #0a0e14;
       --surface:   #111820;
       --card:      #161e28;
@@ -24,6 +25,26 @@
       --amber:     #ffb300;
       --red:       #ff3d57;
       --radius:    12px;
+      --grid-opacity: 0.03;
+      --glow-opacity: 0.12;
+    }
+
+    /* ── Light theme ── */
+    [data-theme="light"] {
+      --bg:        #f8fafc;
+      --surface:   #ffffff;
+      --card:      #ffffff;
+      --border:    #e2e8f0;
+      --accent:    #0066cc;
+      --accent2:   #ff4500;
+      --text:      #1e293b;
+      --muted:     #64748b;
+      --green:     #16a34a;
+      --amber:     #d97706;
+      --red:       #dc2626;
+      --radius:    12px;
+      --grid-opacity: 0.08;
+      --glow-opacity: 0.25;
     }
 
     html { font-size: 16px; }
@@ -34,6 +55,7 @@
       font-family: 'DM Sans', sans-serif;
       min-height: 100vh;
       overflow-x: hidden;
+      transition: background 0.3s ease, color 0.3s ease;
     }
 
     /* ── Animated grid background ── */
@@ -42,11 +64,12 @@
       position: fixed;
       inset: 0;
       background-image:
-        linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+        linear-gradient(rgba(0,212,255,var(--grid-opacity)) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,var(--grid-opacity)) 1px, transparent 1px);
       background-size: 40px 40px;
       pointer-events: none;
       z-index: 0;
+      transition: opacity 0.3s ease;
     }
 
     /* ── Top glow ── */
@@ -58,9 +81,10 @@
       transform: translateX(-50%);
       width: 700px;
       height: 400px;
-      background: radial-gradient(ellipse, rgba(0,212,255,0.12) 0%, transparent 70%);
+      background: radial-gradient(ellipse, rgba(0,212,255,var(--glow-opacity)) 0%, transparent 70%);
       pointer-events: none;
       z-index: 0;
+      transition: opacity 0.3s ease;
     }
 
     /* ── Bus stop selector ── */
@@ -157,7 +181,7 @@
     }
 
     /* ── Refresh button ── */
-    .refresh-btn {
+    .refresh-btn, .theme-toggle {
       margin-left: auto;
       display: flex;
       align-items: center;
@@ -177,12 +201,25 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    .refresh-btn:hover {
+    .refresh-btn:hover, .theme-toggle:hover {
       border-color: var(--accent);
       color: var(--accent);
     }
 
     .refresh-btn svg { width: 14px; height: 14px; }
+    .theme-toggle svg { width: 18px; height: 18px; }
+
+    .theme-toggle {
+      margin-left: 12px;
+      padding: 12px;
+      justify-content: center;
+    }
+
+    .theme-toggle .sun { display: none; }
+    [data-theme="dark"] .theme-toggle .sun { display: block; }
+    [data-theme="dark"] .theme-toggle .moon { display: none; }
+    [data-theme="light"] .theme-toggle .sun { display: none; }
+    [data-theme="light"] .theme-toggle .moon { display: block; }
 
     /* ── Error banner ── */
     .error-banner {
@@ -563,13 +600,31 @@
           <span class="pulse-dot"></span>{{ fetched_at }}
           <span id="cache-indicator" class="cache-pill" style="display:none;">Cached</span>
         </span>
-        <button id="manual-refresh-btn" class="refresh-btn" onclick="manualRefresh()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-          </svg>
-          Refresh
-        </button>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button id="refresh-btn" class="refresh-btn" onclick="refreshTimes()" title="Refresh displayed times">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"></path>
+            </svg>
+            Refresh
+          </button>
+          <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">
+            <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -670,15 +725,10 @@
       <span class="footer-text">
         Data from LTA DataMall &nbsp;·&nbsp;
         <span id="countdown">Next auto-refresh in <span id="timer">2:00</span></span>
+        &nbsp;·&nbsp;
+        <a href="#" onclick="forceRefresh(event)" class="api-link" title="Force refresh from LTA API">Force refresh</a>
       </span>
-      <div style="display:flex; align-items:center; gap:12px;">
-        <button id="update-times-btn" class="refresh-btn" onclick="updateTimesOnly()" title="Recalculate displayed times from last fetch">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"></path>
-          </svg>
-          Update times
-        </button>
+      <div style="display:flex; align-items:center;">
         <a href="/api/bus-arrival" class="api-link">JSON API →</a>
       </div>
     </footer>
@@ -690,6 +740,29 @@
     const AUTO_REFRESH_INTERVAL = 120; // seconds
     const CACHE_DURATION = 60; // seconds - matches server
     
+    // ── Theme handling ──
+    function toggleTheme() {
+      const html = document.documentElement;
+      const currentTheme = html.getAttribute('data-theme');
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      
+      html.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+    }
+
+    function initTheme() {
+      const savedTheme = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      
+      if (savedTheme) {
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      } else if (prefersDark) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    }
+
     // ── Bus stop selection ──
     function changeBusStop() {
       const select = document.getElementById('stopSelect');
@@ -709,7 +782,7 @@
       isPageVisible = !document.hidden;
       if (isPageVisible) {
         startAutoRefresh();
-        updateTimesOnly();
+        refreshTimes();
       } else {
         stopAutoRefresh();
       }
@@ -753,20 +826,8 @@
       }
     }
 
-    // ── Refresh page with new data ──
-    async function manualRefresh() {
-      const btn = document.getElementById('manual-refresh-btn');
-      if (btn) {
-        btn.disabled = true;
-        btn.style.opacity = '0.5';
-      }
-      
-      await fetchFreshData(true);
-      window.location.reload();
-    }
-
-    // ── Update times only (recalculate from stored data) ──
-    function updateTimesOnly() {
+    // ── Refresh times only (recalculate from stored data) ──
+    function refreshTimes() {
       arrivalEls.forEach(el => {
         const iso = el.getAttribute('data-arrival');
         const val = computeMinutes(iso);
@@ -790,6 +851,22 @@
           if (unitEl && unitEl.classList.contains('minutes-unit')) unitEl.style.display = '';
         }
       });
+      
+      showUpdateConfirmation();
+    }
+
+    // ── Force refresh from LTA API ──
+    async function forceRefresh(event) {
+      event.preventDefault();
+      const btn = document.getElementById('refresh-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.textContent = 'Loading...';
+      }
+      
+      await fetchFreshData(true);
+      window.location.reload();
     }
 
     // ── Start auto-refresh countdown ──
@@ -825,7 +902,7 @@
       if (timeUpdateTimer) clearInterval(timeUpdateTimer);
       timeUpdateTimer = setInterval(() => {
         if (isPageVisible) {
-          updateTimesOnly();
+          refreshTimes();
         }
       }, 1000);
     }
@@ -873,8 +950,11 @@
     // ── Initialization ──
     const timerEl = document.getElementById('timer');
 
+    // Initialize theme on load
+    initTheme();
+    
     // Run once on load
-    updateTimesOnly();
+    refreshTimes();
     startAutoRefresh();
     startTimeUpdates();
     
